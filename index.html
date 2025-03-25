@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI ECG Diagnosis System</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: url('bg3.jpg') no-repeat center center fixed;
+            background-size: cover;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+
+    <!-- React and ReactDOM -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.18.13/babel.min.js"></script>
+    
+    <!-- Firebase -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-app-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-auth-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-firestore-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-storage-compat.min.js"></script>
+
+    <!-- React App -->
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAB82NPeB_bmoDbwYmzGuMCb1Qy94nzvJo",
+            authDomain: "cvd-diagnostic.firebaseapp.com",
+            projectId: "cvd-diagnostic",
+            storageBucket: "cvd-diagnostic.appspot.com",
+            messagingSenderId: "31661861996",
+            appId: "1:31661861996:web:dc08f66f5450a2052afc49",
+            measurementId: "G-Y748GGHMZW"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const storage = firebase.storage();
+
+        // SignUp Component
+        function SignUp({ onSwitchToLogin }) {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState(null);
+
+            const handleSignUp = async (e) => {
+                e.preventDefault();
+                setError(null);
+
+                try {
+                    await auth.createUserWithEmailAndPassword(email, password);
+                    alert("Sign-up successful! Please log in.");
+                    onSwitchToLogin(); // Switch to login after successful sign-up
+                } catch (err) {
+                    setError(err.message);
+                }
+            };
+
+            return (
+                <div className="signup-container">
+                    <h1>Sign Up</h1>
+                    <form onSubmit={handleSignUp}>
+                        {error && <div className="error-message">{error}</div>}
+                        <div className="form-group">
+                            <label htmlFor="email">Email</label>
+                            <input
+                                type="email"
+                                id="email"
+                                className="form-control"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label htmlFor="password">Password</label>
+                            <input
+                                type="password"
+                                id="password"
+                                className="form-control"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <button type="submit" className="btn btn-primary">Sign Up</button>
+                    </form>
+                    <p>
+                        Already have an account?{" "}
+                        <button className="btn btn-link" onClick={onSwitchToLogin}>
+                            Log In
+                        </button>
+                    </p>
+                </div>
+            );
+        }
+
+        // Login Component
+        function Login({ onLogin, onSwitchToSignUp }) {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState(null);
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setError(null);
+
+                try {
+                    await auth.signInWithEmailAndPassword(email, password);
+                    onLogin();
+                } catch (err) {
+                    setError(err.message);
+                }
+            };
+
+            return (
+                <div className="login-container">
+                    <h1>Login</h1>
+                    <form onSubmit={handleLogin}>
+                        {error && <div className="error-message">{error}</div>}
+                        <div className="form-group">
+                            <label htmlFor="email">Email</label>
+                            <input
+                                type="email"
+                                id="email"
+                                className="form-control"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label htmlFor="password">Password</label>
+                            <input
+                                type="password"
+                                id="password"
+                                className="form-control"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <button type="submit" className="btn btn-primary">Login</button>
+                    </form>
+                    <p>
+                        Don't have an account?{" "}
+                        <button className="btn btn-link" onClick={onSwitchToSignUp}>
+                            Sign Up
+                        </button>
+                    </p>
+                </div>
+            );
+        }
+
+        // Results Component
+        function ResultsDisplay({ results }) {
+            if (!results) return null;
+
+            const getDiagnosisClass = (diagnosis) => {
+                if (!diagnosis) return "";
+
+                const normalConditions = ["Normal", "Sinus Rhythm"];
+                const warningConditions = ["Left Ventricular Hypertrophy", "Right Ventricular Hypertrophy", "Left Atrial Enlargement"];
+                const dangerConditions = ["Myocardial Infarction", "Atrial Fibrillation", "Ventricular Fibrillation"];
+
+                if (normalConditions.some(cond => diagnosis.includes(cond))) {
+                    return "diagnosis-normal";
+                } else if (warningConditions.some(cond => diagnosis.includes(cond))) {
+                    return "diagnosis-warning";
+                } else if (dangerConditions.some(cond => diagnosis.includes(cond))) {
+                    return "diagnosis-danger";
+                }
+
+                return "";
+            };
+
+            return (
+                <div className="result-container">
+                    <div className="result-header">
+                        <i className="fas fa-heartbeat"></i>
+                        <h2>ECG Analysis Results</h2>
+                    </div>
+                    <div className="result-content">
+                        <div className={`diagnosis ${getDiagnosisClass(results.diagnosis)}`}>
+                            <h3>Diagnosis</h3>
+                            <p>{results.diagnosis || "No diagnosis available"}</p>
+                        </div>
+                        
+                        <div className="confidence-meter">
+                            <div className="confidence-label">
+                                <span>Confidence Level</span>
+                                <span>{results.probability}%</span>
+                            </div>
+                            <div className="confidence-bar">
+                                <div className="confidence-value" style={{ width: `${results.probability}%` }}></div>
+                            </div>
+                        </div>
+                        
+                        <div className="patient-info">
+                            <h3>Heart Metrics</h3>
+                            <div className="patient-info-grid">
+                                <div className="patient-info-item">
+                                    <span>Heart Rate:</span> {results.heartRate} BPM
+                                </div>
+                                <div className="patient-info-item">
+                                    <span>QT Interval:</span> {results.qtInterval} ms
+                                </div>
+                                <div className="patient-info-item">
+                                    <span>PR Interval:</span> {results.prInterval} ms
+                                </div>
+                                <div className="patient-info-item">
+                                    <span>QRS Duration:</span> {results.qrsDuration} ms
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="additional-notes">
+                            <h3>Recommendations</h3>
+                            <p>{results.recommendations || "No recommendations available"}</p>
+                            <p className="disclaimer">Note: This analysis is provided by an AI system and should be confirmed by a qualified healthcare professional.</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Landing Page Component
+        function LandingPage({ onProceed }) {
+            return (
+                <div className="landing-page">
+                    <div className="landing-content">
+                        <h1>ECG Diagnostic System</h1>
+                        <p>Your Health, Our Priority</p>
+                        <button className="btn btn-primary" onClick={onProceed}>
+                            Get Started
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        // Navigation Component
+        function Navigation({ currentPage, setCurrentPage, onLogout, user }) {
+            return (
+                <nav className="main-nav">
+                    <div className="nav-brand">
+                        <i className="fas fa-heartbeat"></i>
+                        <span>ECG Diagnostic</span>
+                    </div>
+                    <ul className="nav-links">
+                        <li className={currentPage === 'dashboard' ? 'active' : ''}>
+                            <button onClick={() => setCurrentPage('dashboard')}>
+                                <i className="fas fa-home"></i> Dashboard
+                            </button>
+                        </li>
+                        <li className={currentPage === 'diseases' ? 'active' : ''}>
+                            <button onClick={() => setCurrentPage('diseases')}>
+                                <i className="fas fa-disease"></i> Heart Diseases
+                            </button>
+                        </li>
+                        <li className={currentPage === 'guidelines' ? 'active' : ''}>
+                            <button onClick={() => setCurrentPage('guidelines')}>
+                                <i className="fas fa-book-medical"></i> Guidelines
+                            </button>
+                        </li>
+                    </ul>
+                    <div className="nav-user">
+                        <span className="user-email">{user?.email}</span>
+                        <button onClick={onLogout} className="btn-logout">
+                            <i className="fas fa-sign-out-alt"></i> Logout
+                        </button>
+                    </div>
+                </nav>
+            );
+        }
+
+        // Heart Diseases Page Component
+        function HeartDiseasesPage() {
+            return (
+                <div className="container">
+                    <div className="page-header">
+                        <h1><i className="fas fa-heartbeat"></i> Heart Diseases</h1>
+                        <p>Understanding common heart conditions and their management</p>
+                    </div>
+
+                    <div className="disease-sections">
+                        <section className="disease-section">
+                            <h2><i className="fas fa-heart"></i> Normal Heart Function</h2>
+                            <p>
+                                A healthy heart efficiently pumps oxygenated blood throughout the body. 
+                                Normal heart rate: <strong>60-100 BPM</strong>, with a regular rhythm and proper blood pressure.
+                            </p>
+                        </section>
+
+                        <section className="disease-section">
+                            <h2><i className="fas fa-heart-broken"></i> Myocardial Infarction (Heart Attack)</h2>
+                            <p>
+                                A heart attack occurs when a blocked coronary artery reduces blood flow to the heart muscle.
+                            </p>
+                            <div className="info-grid">
+                                <div className="info-card">
+                                    <h3><i className="fas fa-exclamation-circle"></i> Symptoms</h3>
+                                    <ul>
+                                        <li>Chest pain or discomfort (pressure, squeezing, burning sensation)</li>
+                                        <li>Shortness of breath</li>
+                                        <li>Nausea, dizziness, sweating</li>
+                                        <li>Pain radiating to the left arm, jaw, or back</li>
+                                    </ul>
+                                </div>
+                                <div className="info-card">
+                                    <h3><i className="fas fa-shield-alt"></i> Precautions</h3>
+                                    <ul>
+                                        <li>Regular exercise (30 min/day, 5 days/week)</li>
+                                        <li>Avoid smoking and excessive alcohol</li>
+                                        <li>Maintain healthy cholesterol and blood pressure levels</li>
+                                    </ul>
+                                </div>
+                                <div className="info-card">
+                                    <h3><i className="fas fa-first-aid"></i> Corrective Measures</h3>
+                                    <ul>
+                                        <li>Immediate <strong>aspirin intake</strong> to thin blood</li>
+                                        <li>Angioplasty or bypass surgery for blocked arteries</li>
+                                        <li>Medications: Beta-blockers, blood thinners</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </section>
+                        <section className="disease-section">
+                            <h2><i className="fas fa-heart-broken"></i> Coronary Artery Disease (CAD)</h2>
+                            <p>
+                                CAD occurs when the coronary arteries supplying blood to the heart become **narrowed or blocked** by plaque.
+                            </p>
+                            <div className="info-grid">
+                                <div className="info-card">
+                                    <h3><i className="fas fa-exclamation-circle"></i> Symptoms</h3>
+                                    <ul>
+                                        <li>Angina (chest pain)</li>
+                                        <li>Shortness of breath</li>
+                                        <li>Fatigue</li>
+                                    </ul>
+                                </div>
+                                <div className="info-card">
+                                    <h3><i className="fas fa-shield-alt"></i> Precautions</h3>
+                                    <ul>
+                                        <li>Eat a heart-healthy diet (rich in fruits, vegetables, and whole grains)</li>
+                        <li>Reduce stress through yoga and meditation</li>
+                        <li>Control diabetes and obesity</li>
+                                    </ul>
+                                </div>
+                                <div className="info-card">
+                                    <h3><i className="fas fa-first-aid"></i> Corrective Measures</h3>
+                                    <ul>
+                                        <li>Cholesterol-lowering medications (statins)</li>
+                        <li>Angioplasty or stent placement</li>
+                        <li>Coronary artery bypass grafting (CABG)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </section>
+                        <section className="disease-section">
+                            <h2><i className="fas fa-heart-broken"></i>  Hypertension (High Blood Pressure)</h2>
+                            <p>
+                                A condition where the force of blood against the artery walls is too high, leading to heart damage.
+                            </p>
+                            <div className="info-grid">
+                                <div className="info-card">
+                                    <h3><i className="fas fa-exclamation-circle"></i> Symptoms</h3>
+                                    <ul>
+                                        <li>Headaches, dizziness</li>
+                        <li>Blurred vision</li>
+                        <li>Chest pain (in severe cases)</li>
+                                    </ul>
+                                </div>
+                                <div className="info-card">
+                                    <h3><i className="fas fa-shield-alt"></i> Precautions</h3>
+                                    <ul>
+                                        <li>Regular exercise (30 min/day, 5 days/week)</li>
+                                        <li>Avoid smoking and excessive alcohol</li>
+                                        <li>Maintain healthy cholesterol and blood pressure levels</li>
+                                    </ul>
+                                </div>
+                                <div className="info-card">
+                                    <h3><i className="fas fa-first-aid"></i> Corrective Measures</h3>
+                                    <ul>
+                                        <li>Immediate <strong>aspirin intake</strong> to thin blood</li>
+                                        <li>Angioplasty or bypass surgery for blocked arteries</li>
+                                        <li>Medications: Beta-blockers, blood thinners</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </section>
+                        {/* Similar structure for other diseases... */}
+                    </div>
+                </div>
+            );
+        }
+
+        // Guidelines Page Component
+        function GuidelinesPage() {
+            return (
+                <div className="container">
+                    <div className="page-header">
+                        <h1><i className="fas fa-book-medical"></i> Heart Health Guidelines</h1>
+                        <p>Essential recommendations for maintaining heart health</p>
+                    </div>
+
+                    <div className="guidelines-grid">
+                        <section className="guideline-card">
+                            <h2><i className="fas fa-shield-alt"></i> General Preventive Measures</h2>
+                            <ul>
+                                <li><strong>Balanced diet:</strong> High in fiber, low in saturated fats</li>
+                                <li><strong>Regular exercise:</strong> At least 150 minutes of moderate exercise per week</li>
+                                <li><strong>Lifestyle choices:</strong> Avoid smoking and alcohol overuse</li>
+                                <li><strong>Regular monitoring:</strong> Check cholesterol and blood pressure levels</li>
+                            </ul>
+                        </section>
+
+                        <section className="guideline-card emergency">
+                            <h2><i className="fas fa-ambulance"></i> Emergency Response for Heart Attacks</h2>
+                            <ul>
+                                <li>Call emergency services <strong>immediately</strong></li>
+                                <li>Chew an <strong>aspirin</strong> (unless allergic) to thin blood</li>
+                                <li>Use <strong>CPR</strong> if the person becomes unconscious</li>
+                            </ul>
+                        </section>
+
+                        <section className="guideline-card">
+                            <h2><i className="fas fa-heart"></i> Post-Heart Attack Recovery</h2>
+                            <ul>
+                                <li>Take prescribed medications regularly</li>
+                                <li>Follow a <strong>cardiac rehabilitation program</strong></li>
+                                <li>Manage stress through meditation or light yoga</li>
+                            </ul>
+                        </section>
+                    </div>
+                </div>
+            );
+        }
+
+        // App Component
+        function App() {
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [user, setUser] = useState(null);
+            const [isSigningUp, setIsSigningUp] = useState(false);
+            const [showLandingPage, setShowLandingPage] = useState(true);
+            const [currentPage, setCurrentPage] = useState('dashboard');
+
+            useEffect(() => {
+                const unsubscribe = auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        setIsLoggedIn(true);
+                        setUser(user);
+                    } else {
+                        setIsLoggedIn(false);
+                        setUser(null);
+                    }
+                });
+
+                return () => unsubscribe();
+            }, []);
+
+            const [formData, setFormData] = useState({
+                firstName: '',
+                lastName: '',
+                age: '',
+                sex: 'male',
+                height: '',
+                weight: '',
+                medicalHistory: '',
+                currentMedications: ''
+            });
+
+            const [file, setFile] = useState(null);
+            const [preview, setPreview] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [results, setResults] = useState(null);
+
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                setFormData({
+                    ...formData,
+                    [name]: value
+                });
+            };
+
+            const handleFileChange = (e) => {
+                const selectedFile = e.target.files[0];
+                if (selectedFile) {
+                    if (!['image/jpeg', 'image/png'].includes(selectedFile.type)) {
+                        setError('Please upload a valid image file (JPG or PNG)');
+                        return;
+                    }
+
+                    setFile(selectedFile);
+                    setError(null);
+
+                    // Create preview
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        setPreview(reader.result);
+                    };
+                    reader.readAsDataURL(selectedFile);
+                }
+            };
+
+            const handleReset = () => {
+                setFormData({
+                    firstName: '',
+                    lastName: '',
+                    age: '',
+                    sex: 'male',
+                    height: '',
+                    weight: '',
+                    medicalHistory: '',
+                    currentMedications: ''
+                });
+                setFile(null);
+                setPreview(null);
+                setResults(null);
+                setError(null);
+            };
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError(null);
+            
+                try {
+                    // Convert file to base64
+                    const base64Image = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(file);
+                    });
+            
+                    // Prepare data for API
+                    const requestData = {
+                        ...formData,
+                        ecgImage: base64Image
+                    };
+            
+                    // Make API call to Flask backend
+                    const response = await fetch('http://localhost:5000/api/predict', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(requestData)
+                    });
+            
+                    if (!response.ok) {
+                        throw new Error('Failed to get prediction');
+                    }
+            
+                    const predictionResults = await response.json();
+                    setResults(predictionResults);
+            
+                    // Save to Firebase if needed
+                    if (auth.currentUser) {
+                        const fileUrl = await uploadToFirebase(file);
+                        await db.collection("ecgData").add({
+                            ...formData,
+                            ecgImageUrl: fileUrl,
+                            prediction: predictionResults,
+                            userId: auth.currentUser.uid,
+                            timestamp: new Date()
+                        });
+                    }
+            
+                    alert('Analysis completed successfully!');
+                } catch (err) {
+                    console.error("Error:", err);
+                    setError(`Error: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // Helper function to upload file to Firebase
+            const uploadToFirebase = async (file) => {
+                if (!file) return null;
+                const fileRef = storage.ref(`ecgImages/${file.name}`);
+                await fileRef.put(file);
+                return await fileRef.getDownloadURL();
+            };
+
+            if (showLandingPage) {
+                return <LandingPage onProceed={() => setShowLandingPage(false)} />;
+            }
+
+            if (!isLoggedIn) {
+                return isSigningUp ? (
+                    <SignUp onSwitchToLogin={() => setIsSigningUp(false)} />
+                ) : (
+                    <Login 
+                        onLogin={() => setIsLoggedIn(true)} 
+                        onSwitchToSignUp={() => setIsSigningUp(true)} 
+                    />
+                );
+            }
+
+            return (
+                <div className="app-container">
+                    <Navigation 
+                        currentPage={currentPage} 
+                        setCurrentPage={setCurrentPage}
+                        onLogout={() => auth.signOut()}
+                        user={user}
+                    />
+                    
+                    {currentPage === 'dashboard' && (
+                        <div className="container">
+                            <div className="header">
+                                <h1>AI-Powered ECG Diagnosis System</h1>
+                                <p>Upload an ECG image for data collection</p>
+                            </div>
+
+                            <div className="main-content">
+                                <div className="form-container">
+                                    <div className="user-controls">
+                                        <span>Welcome, {user?.email}</span>
+                                        <button onClick={() => auth.signOut()} className="btn btn-secondary">
+                                            <i className="fas fa-sign-out-alt"></i> Logout
+                                        </button>
+                                    </div>
+                                    
+                                    <form onSubmit={handleSubmit}>
+                                        {error && <div className="error-message">{error}</div>}
+
+                                        <div className="form-section">
+                                            <h2><i className="fas fa-user"></i> Patient Information</h2>
+                                            <div className="form-row">
+                                                <div className="form-group">
+                                                    <label htmlFor="firstName">First Name*</label>
+                                                    <input
+                                                        type="char"
+                                                        id="firstName"
+                                                        name="firstName"
+                                                        className="form-control"
+                                                        value={formData.firstName}
+                                                        onChange={handleInputChange}
+                                                        required
+                                                    />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label htmlFor="lastName">Last Name</label>
+                                                    <input
+                                                        type="char"
+                                                        id="lastName"
+                                                        name="lastName"
+                                                        className="form-control"
+                                                        value={formData.lastName}
+                                                        onChange={handleInputChange}
+                                                        //required
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="form-row">
+                                                <div className="form-group">
+                                                    <label htmlFor="age">Age*</label>
+                                                    <input
+                                                        type="number"
+                                                        id="age"
+                                                        name="age"
+                                                        className="form-control"
+                                                        value={formData.age}
+                                                        onChange={handleInputChange}
+                                                        min="0"
+                                                        max="120"
+                                                        required
+                                                    />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label htmlFor="sex">Sex*</label>
+                                                    <select
+                                                        id="sex"
+                                                        name="sex"
+                                                        className="form-control"
+                                                        value={formData.sex}
+                                                        onChange={handleInputChange}
+                                                        required
+                                                    >
+                                                        <option value="male">Male</option>
+                                                        <option value="female">Female</option>
+                                                        <option value="other">Other</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="form-row">
+                                                <div className="form-group">
+                                                    <label htmlFor="height">Height (cm)</label>
+                                                    <input
+                                                        type="number"
+                                                        id="height"
+                                                        name="height"
+                                                        className="form-control"
+                                                        value={formData.height}
+                                                        onChange={handleInputChange}
+                                                        min="50"
+                                                        max="300"
+                                                    />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label htmlFor="weight">Weight (kg)</label>
+                                                    <input
+                                                        type="number"
+                                                        id="weight"
+                                                        name="weight"
+                                                        className="form-control"
+                                                        value={formData.weight}
+                                                        onChange={handleInputChange}
+                                                        min="1"
+                                                        max="600"
+                                                    />
+                                                </div>
+                                            </div>
+                                          
+                                            <div className="form-group">
+                                                <label htmlFor="medicalHistory">Medical History</label>
+                                                <textarea
+                                                    id="medicalHistory"
+                                                    name="medicalHistory"
+                                                    className="form-control"
+                                                    value={formData.medicalHistory}
+                                                    onChange={handleInputChange}
+                                                    rows="3"
+                                                ></textarea>
+                                            </div>
+                                            
+                                            <div className="form-group">
+                                                <label htmlFor="currentMedications">Current Medications</label>
+                                                <textarea
+                                                    id="currentMedications"
+                                                    name="currentMedications"
+                                                    className="form-control"
+                                                    value={formData.currentMedications}
+                                                    onChange={handleInputChange}
+                                                    rows="2"
+                                                ></textarea>
+                                            </div>
+                                        </div>
+
+                                        <div className="form-section">
+                                            <h2><i className="fas fa-heartbeat"></i> ECG Image Upload</h2>
+                                            <label htmlFor="ecgImage" className="file-upload">
+                                                <i className="fas fa-upload"></i>
+                                                <p>Drag & drop your ECG image here</p>
+                                                <span>or click to browse files (JPG, PNG)</span>
+                                                <input
+                                                    type="file"
+                                                    id="ecgImage"
+                                                    name="ecgImage"
+                                                    accept="image/jpeg, image/png"
+                                                    onChange={handleFileChange}
+                                                    required
+                                                />
+                                            </label>
+
+                                            {preview && (
+                                                <div className="upload-preview">
+                                                    <h3>Preview</h3>
+                                                    <img src={preview} alt="ECG Preview" />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="submit-section">
+                                            <button type="submit" className="btn btn-primary" disabled={loading}>
+                                                {loading ? <><i className="fas fa-spinner fa-spin"></i> Submitting...</> : <><i className="fas fa-save"></i> Submit Data</>}
+                                            </button>
+                                            <button type="button" className="btn btn-danger" onClick={handleReset}>
+                                                <i className="fas fa-trash-alt"></i> Reset Form
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {currentPage === 'diseases' && <HeartDiseasesPage />}
+                    {currentPage === 'guidelines' && <GuidelinesPage />}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+    
+</body>
+</html>
